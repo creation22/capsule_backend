@@ -17,10 +17,7 @@ for (const key of requiredEnv) {
 let serviceAccount;
 try {
   serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-
-  // Fix the private key formatting
   serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-
 } catch (e) {
   throw new Error('FIREBASE_SERVICE_ACCOUNT is not valid JSON or private key is incorrectly formatted');
 }
@@ -37,16 +34,37 @@ const emailScheduler = () => {
   console.log('Email scheduler started...');
   cron.schedule('* * * * *', async () => {
     console.log('Checking for due emails...');
+
     const now = new Date();
-    const currentDate = now.toISOString().split('T')[0];
-    const currentTime = now.toTimeString().slice(0, 5);
+
+    // Convert to IST
+    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+
+    const year = istNow.getFullYear();
+    const month = String(istNow.getMonth() + 1).padStart(2, '0');
+    const day = String(istNow.getDate()).padStart(2, '0');
+    const hours = String(istNow.getHours()).padStart(2, '0');
+    const minutes = String(istNow.getMinutes()).padStart(2, '0');
+
+    const currentDate = `${year}-${month}-${day}`;
+    const currentTime = `${hours}:${minutes}`;
+
+    console.log(`IST Date: ${currentDate}, IST Time: ${currentTime}`);
+
     try {
       const snapshot = await db.collection('emails')
         .where('deliveryDate', '==', currentDate)
         .where('deliveryTime', '==', currentTime)
         .where('delivered', '==', false)
         .get();
-      if (snapshot.empty) return;
+
+      if (snapshot.empty) {
+        console.log('No emails to send at this time.');
+        return;
+      }
+
+      console.log(`Found ${snapshot.size} emails to send.`);
+
       await Promise.all(snapshot.docs.map(async (doc) => {
         const data = doc.data();
         try {
